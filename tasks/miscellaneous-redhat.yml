@@ -15,21 +15,12 @@
   command: timedatectl set-timezone {{ timezone }}
   when: current_timezone.stat.lnk_source is not defined or timezone != current_timezone.stat.lnk_source | regex_replace('/usr/share/zoneinfo/', '')
 
-- name: Start NTP Server
-  service:
-    name=ntpd
-    state=started
-    enabled=true
-  ignore_errors: True
-
-- name: Start NTP Server (RedHat v8)
+- name: Start chronyd service
   service:
     name=chronyd
     state=started
     enabled=true
-  ignore_errors: True
 
-# Piece of s...
 - name: Stop and disable NetworkManager
   service:
     name=NetworkManager
