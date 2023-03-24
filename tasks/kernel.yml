@@ -7,13 +7,13 @@
     path: /etc/selinux/config
   register: selinux_config
 
-- name: Install selinux pything binding just in case... (not for distro v.8)
+- name: Install selinux python binding for Fedora 37
   yum:
-    name=libselinux-python
+    name=libselinux-python3
     state=present
-  when: ansible_os_family == 'RedHat' and selinux_config.stat.exists and ansible_distribution_major_version != '8'
+  when: ansible_os_family == 'RedHat' and selinux_config.stat.exists and ansible_distribution_major_version == '37'
 
-- name: Install selinux pything binding just in case... (for distro v.8)
+- name: Install selinux python binding
   yum:
     name=python3-libselinux
     state=present
