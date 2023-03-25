@@ -23,8 +23,8 @@
   command: "dpkg-reconfigure --frontend noninteractive tzdata"
   when: current_timezone.stdout != timezone
 
-- name: Start NTP Server
+- name: Start chrony service
   service:
-    name=ntp
+    name=chrony
     state=started
     enabled=true
