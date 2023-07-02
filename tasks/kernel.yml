@@ -37,14 +37,14 @@
 # see how to set default limit system-wide for systemd units
 # https://www.freedesktop.org/software/systemd/man/systemd-system.conf.html
 # https://serverfault.com/questions/958760/changing-ulimit-on-systemd
-- name: 'default open file limit for systemd units'
-  template:
-    dest: /etc/systemd/system.conf.d/50-openfile.conf
-    src: systemd_openfile.conf
-    owner: root
-    group: root
-    mode: "0644"
-  when: ansible_os_family == 'Debian'
+# - name: 'default open file limit for systemd units'
+#   template:
+#     dest: /etc/systemd/system.conf.d/50-openfile.conf
+#     src: systemd_openfile.conf
+#     owner: root
+#     group: root
+#     mode: "0644"
+#   when: ansible_os_family == 'Debian'
 
 - name: Enable iptables to load the netfilter module
   command:

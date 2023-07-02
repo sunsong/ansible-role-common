@@ -1,10 +1,10 @@
 ---
-- name: Stop and disable Firewall
-  service:
-    name=ufw
-    state=stopped
-    enabled=false
-  when: handle_firewall and disable_firewall
+# - name: Stop and disable Firewall
+#   service:
+#     name=ufw
+#     state=stopped
+#     enabled=false
+#   when: handle_firewall and disable_firewall
 
 - name: Check current timezone
   command: cat /etc/timezone
