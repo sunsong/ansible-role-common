@@ -1,0 +1,9 @@
+---
+# ansible-lint configuration for sunsong.common.
+#
+# The Galaxy FQCN is `sunsong.common` (namespace=sunsong, role_name=common).
+# Both halves match the schema's `^[a-z][a-z0-9_]+$` regex, so neither
+# `schema[meta]` nor `role-name` should fire. If ansible-lint complains
+# about hyphenated names, that's a stale error from before the rename —
+# clear the cache with `ansible-lint --offline --clear-cache`.
+skip_list: []

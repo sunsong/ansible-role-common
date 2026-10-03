@@ -1,25 +1,29 @@
+---
 #
-# Define which script to run according to os family
+# OS-agnostic misc: bash history + LESS charset. The RedHat-specific tasks
+# (firewalld, NetworkManager, tzdata) were dropped with RedHat-family support.
 #
-- include_tasks: miscellaneous-debian.yml
-  when: ansible_os_family == 'Debian'
+- name: Configure bash history size and format
+  ansible.builtin.copy:
+    dest: /etc/profile.d/99-bash_history.sh
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      export HISTTIMEFORMAT="{{ bash_history_format }}"
+      export HISTFILESIZE={{ bash_history_size }}
+  when: enable_misc
 
-- include_tasks: miscellaneous-redhat.yml
-  when: ansible_os_family == 'RedHat'
+- name: Configure LESS charset
+  ansible.builtin.copy:
+    dest: /etc/profile.d/99-less.sh
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      export LESSCHARSET=utf-8
+  when: enable_misc
 
-- name: Ensure proper bash history size and format
-  lineinfile:
-    line={{ item }}
-    dest=/etc/profile.d/99-bash_history.sh
-    create=yes
-  with_items:
-    - export HISTTIMEFORMAT="{{ bash_history_format }}"
-    - export HISTFILESIZE={{ bash_history_size }}
-
-- name: Ensure less command can read all charset
-  lineinfile:
-    line={{ item }}
-    dest=/etc/profile.d/99-less.sh
-    create=yes
-  with_items:
-    - export LESSCHARSET=utf-8
+- name: Configure timezone via systemd
+  ansible.builtin.include_tasks: miscellaneous-debian.yml
+  when: enable_misc

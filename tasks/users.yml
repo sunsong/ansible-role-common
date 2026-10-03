@@ -1,40 +1,47 @@
 ---
 #
-# Users management
+# User creation + SSH key management + sudoers drop-ins.
 #
-
-- name: Add ssh agent line to sudoers
-  lineinfile: 
-    dest: /etc/sudoers
+# Quirks:
+#   - The first task adds `SSH_AUTH_SOCK` to sudoers' env_keep. Required for
+#     `sudo -A` to forward ssh-agent; harmless if you don't use agent
+#     forwarding.
+#   - `authorized_key` (in ansible.posix, not ansible.builtin) skips users
+#     that don't opt in via `item.0.ssh`. The `with_subelements` loop flattens
+#     `authorized` per user.
+#   - sudoers drop-ins go in /etc/sudoers.d/ with mode 0440 (not 0644) —
+#     sudo refuses to parse files with looser permissions.
+#
+- name: Allow SSH_AUTH_SOCK through sudo
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers
     state: present
     regexp: SSH_AUTH_SOCK
-    line: Defaults env_keep += "SSH_AUTH_SOCK"
+    line: 'Defaults env_keep += "SSH_AUTH_SOCK"'
+    validate: 'visudo -cf %s'
 
-- name: Create the users
-  user:
-    name={{ item.name }}
-    state=present
-    shell=/bin/bash
-  with_items:
-    "{{ common_users | default([]) }}"
+- name: Create users
+  ansible.builtin.user:
+    name: "{{ item.name }}"
+    state: present
+    shell: /bin/bash
+  loop: "{{ common_users | default([]) }}"
 
-- name: Add the SSH keys to the users
-  authorized_key:
-    state=present
-    user="{{ item.0.name }}"
-    key="{{ item.1 }}"
-  when: item.0.ssh
-  with_subelements:
-    - "{{ common_users | default([]) }}"
-    - "authorized"
+- name: Add authorized SSH keys
+  ansible.posix.authorized_key:
+    state: present
+    user: "{{ item.0.name }}"
+    key: "{{ item.1 }}"
+  when: item.0.ssh | default(false)
+  loop: "{{ common_users | subelements('authorized', skip_missing=True) }}"
 
-- name: Enable sudo users
-  template:
-    src=sudo_user.j2
-    dest=/etc/sudoers.d/{{ item.name }}
-    owner=root
-    group=root
-    mode=440
-  when: item.sudo
-  with_items:
-    "{{ common_users | default([]) }}"
+- name: Drop sudoers fragments
+  ansible.builtin.template:
+    src: sudo_user.j2
+    dest: "/etc/sudoers.d/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: 'visudo -cf %s'
+  when: item.sudo | default(false)
+  loop: "{{ common_users | default([]) }}"

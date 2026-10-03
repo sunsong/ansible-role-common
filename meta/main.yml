@@ -1,18 +1,41 @@
 ---
 galaxy_info:
-  name: wcl-common
-  author: Wiredcraft
-  description: common deployment steps for wiredcraft
-  company: Wiredcraft
+  # Galaxy FQCN: sunsong.common
+  #   - namespace: sunsong (the publishing author/owner)
+  #   - role_name: common
+  # Consumers reference this role as `sunsong.common` in playbooks or
+  # install it with `ansible-galaxy role install sunsong.common`.
+  role_name: common
+  namespace: sunsong
+  author: sunsong
+  description: >-
+    common server bootstrap for Debian 13+ and Ubuntu 24.04+
+    (hostname, packages, users, kernel tunables, sshd hardening,
+    miscellaneous shell defaults)
   license: MIT
-  min_ansible_version: 1.9
+  # Bumped from 1.9 to 2.12 — the role uses include_tasks (2.4+), FQCN
+  # ansible.builtin.* modules, and modern YAML `key: value` syntax.
+  min_ansible_version: "2.12"
   platforms:
-  - name: Ubuntu
-    versions:
-    - all
-  - name: CentOS
-  versions:
-    - all
+    - name: Debian
+      versions:
+        - bookworm   # 12 — LTS until 2026-06
+        - trixie     # 13 — current stable, LTS until ~2028
+    - name: Ubuntu
+      versions:
+        - noble      # 24.04 LTS, ESM until 2034-04
+        - questing   # 25.10 interim
+        - resolute   # 26.04 LTS
   galaxy_tags:
-    - wcl
+    - common
+    - debian
+    - ubuntu
+    - sysctl
+    - ssh
+# Collection requirements: ansible.posix (sysctl, mount, authorized_key,
+# selinux, synchronize, firewalld) and community.general (git_config).
+# Install via:
+#   ansible-galaxy collection install ansible.posix community.general
+# The role's tasks/main.yml also declares `collections:` so the FQCNs
+# resolve on a fresh controller.
 dependencies: []

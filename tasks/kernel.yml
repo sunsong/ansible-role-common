@@ -1,76 +1,48 @@
 ---
 #
-# Apply the limits to the linux system
+# Kernel / sysctl / ulimit tuning for Debian-family hosts.
 #
-- name: Check if selinux is installed
-  stat:
-    path: /etc/selinux/config
-  register: selinux_config
-
-- name: Install selinux python binding for Fedora 37
-  yum:
-    name=libselinux-python3
-    state=present
-  when: ansible_distribution == "Fedora" and selinux_config.stat.exists
-
-- name: Install selinux python binding
-  yum:
-    name=python3-libselinux
-    state=present
-  when: ansible_distribution == "Fedora" and selinux_config.stat.exists
-
-# selinux ansible module haven't been tested on any Debian system according to ansible doc, but it works.
-- name: Change SELinux mode to disabled
-  selinux:
-    state=disabled
-  when: selinux_config.stat.exists
-
-# Limits Tunning
-- name: Add ulimit into /etc/init.d/functions
-  lineinfile:
-    dest=/etc/init.d/functions
-    insertafter='^export PATH'
-    line='ulimit -n 65536'
-    state=present
-  when: ansible_os_family == 'RedHat'
-
-# see how to set default limit system-wide for systemd units
-# https://www.freedesktop.org/software/systemd/man/systemd-system.conf.html
-# https://serverfault.com/questions/958760/changing-ulimit-on-systemd
-# - name: 'default open file limit for systemd units'
-#   template:
-#     dest: /etc/systemd/system.conf.d/50-openfile.conf
-#     src: systemd_openfile.conf
-#     owner: root
-#     group: root
-#     mode: "0644"
-#   when: ansible_os_family == 'Debian'
-
-- name: Enable iptables to load the netfilter module
-  command:
-    iptables -nvL
-
-# this is for direct login with system
-# see man page of login(1), login.defs(5), limits(5)
-- name: Set kernel limits
-  lineinfile:
-    dest=/etc/security/limits.conf
-    line='{{ item.0.user }} {{ item.1 }} {{ item.0.name }} {{ item.0.value }}'
-    state=present
-  with_subelements:
-    - "{{ common_limits | default([]) }}"
-    - "type"
-
+# RedHat-family support (SELinux, EPEL, firewalld, NetworkManager) was dropped
+# in v2 — see docs/UPGRADE_CHECKLIST.md.
 #
-# CRASH on QC ... to investigate
+# Quirks:
+#   - net.ipv4.tcp_tw_recycle was removed from the Linux kernel in 4.12;
+#     Debian 13 ships 6.12 LTS so the file does not exist. The sysctl task
+#     uses `ignoreerrors: true` to skip unknown keys silently. Kept at 0 in
+#     defaults because some monitoring tooling still greps for it.
+#   - The sysctl module writes to /etc/sysctl.d/99-common.conf (set via
+#     `sysctl_file:`) AND applies immediately via `sysctl_set=yes reload=yes`.
+#     Files in /etc/sysctl.d/ are applied at boot by systemd-sysctl.service
+#     in alphanumeric order; the 99-prefix ensures we win against any
+#     distro-shipped defaults.
+#   - ansible.posix.sysctl defaults to /etc/sysctl.conf if `sysctl_file:` is
+#     not set. /etc/sysctl.conf is legacy and read once at boot on most
+#     systems; sysctl.d/ drop-ins are the modern pattern.
+#   - limits.conf is parsed by PAM (pam_limits.so). systemd services that do
+#     not go through PAM (most of them on Debian 13/Ubuntu 26.04) ignore it.
+#     If you need a system-wide fd limit for systemd units, see
+#     templates/systemd_openfile.conf.
+#   - ansible.posix.sysctl lives in the ansible.posix collection. It is NOT
+#     in ansible.builtin despite looking like it should be — module migration
+#     history.
 #
-# - name: Set kernel values via sysctl
-#   sysctl:
-#     name="{{ item.key }}"
-#     value="{{ item.value }}"
-#     state=present
-#     reload=yes
-#     sysctl_set=no
-#   ignore_errors: True
-#   with_dict:
-#     common_sysctl
+
+- name: Apply ulimit entries in /etc/security/limits.conf
+  ansible.builtin.lineinfile:
+    dest: /etc/security/limits.conf
+    line: "{{ item.0.user }} {{ item.1 }} {{ item.0.name }} {{ item.0.value }}"
+    state: present
+  loop: "{{ common_limits | subelements('type') }}"
+
+- name: Apply sysctl tunables from defaults
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    reload: true
+    ignoreerrors: true
+    sysctl_file: /etc/sysctl.d/99-common.conf
+  loop: "{{ common_sysctl | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

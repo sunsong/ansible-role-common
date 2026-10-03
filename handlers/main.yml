@@ -1,18 +1,32 @@
 ---
-- name: restart ssh
-  debug: msg="checking config first"
-  changed_when: True
+#
+# Restart sshd only if the new config parses cleanly.
+#
+# Quirks:
+#   - `sshd -t` exits non-zero on parse errors; the chain below always runs
+#     the check before the restart, so a broken config leaves the running
+#     daemon untouched. Without this, a typo in sshd_config would lock you out.
+#   - `check_mode: false` is required so `--check` runs the validation and
+#     surfaces errors instead of silently skipping it.
+#   - `validate: ` could be used on the lineinfile tasks themselves, but
+#     handlers run once per play so we keep the chain here for clarity.
+#
+- name: Restart ssh
+  ansible.builtin.debug:
+    msg: "validating sshd_config before restart"
+  changed_when: true
   notify:
-    - check ssh configuration
-    - restart ssh - after config check
+    - Check sshd configuration
+    - Restart ssh - after config check
 
-- name: check ssh configuration
-  shell: /usr/sbin/sshd -t
-  register: result
-  changed_when: "result.rc != 0"
-  check_mode: no # https://docs.ansible.com/ansible/latest/user_guide/playbooks_checkmode.html
+- name: Check sshd configuration
+  ansible.builtin.command: /usr/sbin/sshd -t
+  register: sshd_test
+  changed_when: "sshd_test.rc != 0"
+  check_mode: false
 
-- name: restart ssh - after config check
-  service:
-    name={{ ssh_service }}
-    state=restarted
+- name: Restart ssh - after config check
+  ansible.builtin.service:
+    name: ssh
+    state: restarted
+    use: service

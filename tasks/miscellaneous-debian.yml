@@ -1,30 +1,37 @@
 ---
-# - name: Stop and disable Firewall
-#   service:
-#     name=ufw
-#     state=stopped
-#     enabled=false
-#   when: handle_firewall and disable_firewall
+#
+# Timezone + chrony management for Debian / Ubuntu.
+#
+# Quirks:
+#   - On Debian 12+ and Ubuntu 24.04+, /etc/timezone is no longer the timezone
+#     source — `dpkg-reconfigure tzdata` writes a file that systemd ignores.
+#     The source of truth is the /etc/localtime symlink, set via
+#     `timedatectl set-timezone`. We compare against that target instead of
+#     reading /etc/timezone (which may be absent).
+#   - systemd-timedated owns the timezone; calling timedatectl requires a
+#     DBus session. In containers without systemd (e.g. chroot installs) this
+#     task will fail. Run role against systemd-managed hosts only.
+#   - chrony is installed via packages.yml. The `service` task below only
+#     manages state; if the package is missing the task will report
+#     `Could not find the requested service chrony`.
+#
 
-- name: Check current timezone
-  command: cat /etc/timezone
-  register: current_timezone
+- name: Read current /etc/localtime symlink target
+  ansible.builtin.stat:
+    path: /etc/localtime
+  register: current_localtime
 
-- name: Set the timezone config file
-  copy:
-    content={{ timezone }}
-    dest=/etc/timezone
-    owner=root
-    group=root
-    mode=0644
-  when: current_timezone.stdout != timezone
+- name: Set timezone via timedatectl
+  ansible.builtin.command:
+    cmd: "timedatectl set-timezone {{ timezone }}"
+  when:
+    - current_localtime.stat.lnk_source is not defined
+      or timezone != (current_localtime.stat.lnk_source | regex_replace('^/usr/share/zoneinfo/', ''))
+  changed_when: true
 
-- name: Enable timezone settings
-  command: "dpkg-reconfigure --frontend noninteractive tzdata"
-  when: current_timezone.stdout != timezone
-
-- name: Start chrony service
-  service:
-    name=chrony
-    state=started
-    enabled=true
+- name: Ensure chrony service is started and enabled
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+    use: service

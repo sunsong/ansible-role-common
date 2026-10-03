@@ -1,28 +1,49 @@
 ---
 #
-# Main tasks, having all sub tasks to be include_tasksd.
+# Entry point. Each partial is gated by its `enable_*` flag in defaults.
 #
-
-- include_tasks: hostname.yml
+# Quirks:
+#   - `include_tasks` is dynamic — the inner `when:` is evaluated per host at
+#     runtime. Use `import_tasks` only when you want the include itself to be
+#     conditional on the play (static). We want per-host, so include_tasks.
+#   - The role runs all enabled partials unconditionally; there is no
+#     ordering dependency between them. packages.yml must run before
+#     miscellaneous-debian.yml so that chrony is installed before the
+#     service task. Both are included here in that order.
+#   - Collection requirements (`ansible.posix`, `community.general`) are NOT
+#     declared here because `collections:` is not valid at the top of a task
+#     file. Install them on the controller with:
+#       ansible-galaxy collection install ansible.posix community.general
+#     Or declare `collections:` at playbook level.
+#
+- name: Configure hostname and /etc/hosts
+  ansible.builtin.include_tasks: hostname.yml
   when: enable_hostname
 
-- include_tasks: swap.yml
+- name: Configure swap file
+  ansible.builtin.include_tasks: swap.yml
   when: enable_swapfile
 
-- include_tasks: packages.yml
+- name: Install packages
+  ansible.builtin.include_tasks: packages.yml
   when: enable_packages
 
-- include_tasks: users.yml
+- name: Create users
+  ansible.builtin.include_tasks: users.yml
   when: enable_users
 
-- include_tasks: kernel.yml
+- name: Apply kernel tunables
+  ansible.builtin.include_tasks: kernel.yml
   when: enable_kernel
 
-- include_tasks: git.yml
+- name: Configure global git identity
+  ansible.builtin.include_tasks: git.yml
   when: enable_git
 
-- include_tasks: ssh.yml
+- name: Harden sshd
+  ansible.builtin.include_tasks: ssh.yml
   when: enable_ssh
 
-- include_tasks: miscellaneous.yml
+- name: Apply miscellaneous settings
+  ansible.builtin.include_tasks: miscellaneous.yml
   when: enable_misc

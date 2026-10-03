@@ -1,10 +1,17 @@
 ---
 #
-# Determine which package installation script to run according to OS types.
+# Package installation — Debian/Ubuntu only (RedHat-family support dropped).
+# The legacy `include_tasks: packages-debian.yml when os_family == 'Debian'`
+# pattern is unnecessary now: the role is Debian-only by definition.
 #
+- name: Update apt cache and run safe upgrade
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: safe  # `safe` == `apt upgrade`; `dist` would do `apt full-upgrade`
+  when: enable_packages
 
-- include_tasks: packages-debian.yml
-  when: ansible_os_family == 'Debian'
-
-- include_tasks: packages-redhat.yml
-  when: ansible_os_family == 'RedHat'
+- name: Install common packages
+  ansible.builtin.apt:
+    name: "{{ common_packages_debian }}"
+    state: present
+  when: enable_packages

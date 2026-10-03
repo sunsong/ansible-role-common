@@ -1,0 +1,70 @@
+# ansible-galaxy local role/collection cache.
+# Created when `ansible-galaxy role install <X>` or `ansible-galaxy collection
+# install <X>` runs with `roles_path` / `collections_path` pointing inside
+# the project, or when the user venv doesn't have a writable home directory.
+# Symlinks under `.ansible/roles/<namespace>.<role>` point at the actual
+# role sources elsewhere on disk; this directory is NEVER source code and
+# must never be committed.
+.ansible/
+
+# Editor / IDE / OS junk.
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Python build / cache artifacts (in case anyone runs role tests via Python).
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+dist/
+build/
+
+# Ansible runtime artifacts.
+*.retry                 # ansible-playbook leaves these when a task fails
+.ansible/               # (also covered above; explicit for clarity)
+
+# Secrets — should NEVER be committed.
+# If you find yourself adding one of these, use ansible-vault or a
+# credentials manager instead.
+*.pem
+*.key
+*.p12
+*.pfx
+*.asc
+*.gpg
+.env
+.env.*
+credentials.yml
+credentials.yaml
+secrets.yml
+secrets.yaml
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+id_xmss
+*.jks
+*.keystore
+
+# Test artifacts (test harnesses live outside the repo, but be defensive).
+.tox/
+.pytest_cache/
+.cache/
+.vagrant/
+.venv/
+venv/
+
+# CI / build outputs.
+*.log
+*.bak
+*.tmp
+*.orig

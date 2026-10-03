@@ -1,26 +1,47 @@
 ---
-- name: Define SSH service name
-  set_fact:
-    ssh_service=sshd
-  when: ansible_os_family == 'RedHat'
+#
+# sshd hardening — Debian/Ubuntu only. Service is always `ssh` on these
+# distros (the RedHat `sshd` distinction is gone with RedHat support).
+#
+# Strategy:
+#   - Deploy a managed drop-in at /etc/ssh/sshd_config.d/00-common.conf
+#     via templates/sshd_common.conf.j2. The stock sshd_config on
+#     Debian 13+ / Ubuntu 24.04+ includes everything in that directory, so
+#     our directives take effect without editing the main config.
+#   - Generate a banner at /etc/issue.net (Pre-login banner) when
+#     ssh_hardening.banner is set. The role creates the file if missing;
+#     operators may override with their own.
+#   - The "restart ssh" handler in handlers/main.yml runs `sshd -t` before
+#     the restart, so a syntax error here cannot lock you out.
+#
+# Quirks:
+#   - The pre-hardening lineinfile tasks for UseDNS / GSSAPIAuthentication
+#     were removed when the template was introduced — the template emits
+#     those directives directly. If you set ssh_hardening.use_dns or
+#     ssh_hardening.gssapi_authentication to null, the template omits them
+#     and the distro default applies (UseDNS=yes, GSSAPIAuthentication=no
+#     on Debian 13).
+#   - `sshd -T` validates the config and prints the EFFECTIVE values. Use
+#     `sudo sshd -T | grep <directive>` to verify the drop-in landed.
+#
+- name: Deploy sshd_config.d drop-in
+  ansible.builtin.template:
+    src: sshd_common.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-common.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart ssh
 
-- name: Define SSH service name
-  set_fact:
-    ssh_service=ssh
-  when: ansible_os_family == 'Debian'
-
-- name: Disable UseDNS in ssh config
-  lineinfile:
-    dest=/etc/ssh/sshd_config
-    line='UseDNS no'
-    regexp='(#|)\s*UseDNS\s*'
-    state=present
-  notify: restart ssh
-
-- name: Disable GSSAPIAuthentication in ssh config
-  lineinfile:
-    dest=/etc/ssh/sshd_config
-    line='GSSAPIAuthentication no'
-    regexp='(#|)\s*GSSAPIAuthentication\s*'
-    state=present
-  notify: restart ssh
+- name: Ensure pre-login banner file exists
+  ansible.builtin.copy:
+    dest: "{{ ssh_hardening.banner | default('/etc/issue.net') }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      ********************************************************************
+      * Authorized access only. All activity is monitored and recorded.   *
+      * Disconnect immediately if you are not an authorized user.        *
+      ********************************************************************
+  when: ssh_hardening.banner is defined and ssh_hardening.banner != none

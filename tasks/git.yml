@@ -1,12 +1,24 @@
 ---
 #
-# Git initial config.
+# Global git identity.
 #
+# Quirks:
+#   - `git config --global` writes to ~/.gitconfig for the invoking user.
+#     Running as root writes to /root/.gitconfig — which is what you want for
+#     Ansible-as-root. If you run this role as a non-root user, override
+#     `common_git_user_name` / `common_git_user_email` and consider a
+#     become_users: <user> wrapper.
+#   - community.general.git_config is in the community.general collection
+#     (declared in meta/main.yml). It is NOT in ansible.builtin.
+#
+- name: Configure global git user.name
+  community.general.git_config:
+    name: user.name
+    value: "{{ common_git_user_name }}"
+    scope: global
 
-- name: Configure GIT user name
-  command: 
-    git config --global user.name {{ common_git_user_name }}
-
-- name: Configure GIT user email
-  command: 
-    git config --global user.email {{ common_git_user_email }}
+- name: Configure global git user.email
+  community.general.git_config:
+    name: user.email
+    value: "{{ common_git_user_email }}"
+    scope: global
