@@ -30,3 +30,8 @@
     name: ssh
     state: restarted
     use: service
+
+- name: Restart zram swap
+  ansible.builtin.service:
+    name: zramswap
+    state: restarted

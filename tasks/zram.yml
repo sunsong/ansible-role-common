@@ -1,0 +1,37 @@
+---
+# Install and configure zram-tools. Its swap priority must exceed the optional
+# disk swapfile priority so compressed RAM is filled first.
+- name: Validate zram swap settings
+  ansible.builtin.assert:
+    that:
+      - zram_algorithm is match('^[A-Za-z0-9_-]+$')
+      - zram_size_percent | int >= 1
+      - zram_size_percent | int <= 100
+      - zram_priority | int >= -1
+      - zram_priority | int <= 32767
+      - swapfile_priority | int >= -1
+      - swapfile_priority | int <= 32767
+      - not enable_swapfile or zram_priority | int > swapfile_priority | int
+    fail_msg: >-
+      Use a valid compression algorithm, zram size from 1-100 percent, swap
+      priorities from -1 to 32767, and a higher zram priority than file swap.
+
+- name: Install zram-tools
+  ansible.builtin.apt:
+    name: zram-tools
+    state: present
+
+- name: Configure zram-tools
+  ansible.builtin.template:
+    src: zramswap.conf.j2
+    dest: /etc/default/zramswap
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart zram swap
+
+- name: Enable and start zram swap
+  ansible.builtin.service:
+    name: zramswap
+    enabled: true
+    state: started

@@ -20,6 +20,10 @@
   ansible.builtin.include_tasks: hostname.yml
   when: enable_hostname
 
+- name: Configure zram swap
+  ansible.builtin.include_tasks: zram.yml
+  when: enable_zram
+
 - name: Configure swap file
   ansible.builtin.include_tasks: swap.yml
   when: enable_swapfile

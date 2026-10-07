@@ -19,8 +19,8 @@
 #     idempotent.
 #   - `swapon -a` activates all swap entries in fstab, including any the
 #     operator added manually. Use `swapon {{ swap_path }}` to be surgical.
-#   - On Debian 13 / Ubuntu 26.04 a `systemd-swap` unit may be preferred for
-#     zram; this role does not configure that.
+#   - Optional compressed RAM swap is configured separately in tasks/zram.yml
+#     using the distro's zram-tools package.
 #   - ansible.posix.mount is in the ansible.posix collection, NOT ansible.builtin.
 #
 - name: Check if swapfile already exists
@@ -66,6 +66,7 @@
     name: swap
     src: "{{ swap_path }}"
     fstype: swap
+    opts: "{{ 'pri=' ~ swapfile_priority if enable_zram else omit }}"
     state: present
 
 - name: Activate swap

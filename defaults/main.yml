@@ -9,6 +9,11 @@ enable_git: true
 enable_ssh: true
 enable_misc: true
 enable_swapfile: false
+enable_zram: false
+zram_algorithm: lz4
+zram_size_percent: 50
+zram_priority: 100
+swapfile_priority: 10
 
 #
 # Git related
@@ -68,7 +73,8 @@ common_limits:
 # applied at runtime, missing keys (e.g. tcp_tw_recycle on 4.12+) are skipped.
 #
 # Notes on individual keys:
-#   - vm.swappiness=1 prefers RAM over swap; raise if you actually want swap use.
+#   - vm.swappiness defaults to 1, or 100 when zram is enabled. Override this
+#     key in common_sysctl to tune swap behavior for a specific workload.
 #   - net.ipv4.tcp_tw_recycle was removed from Linux 4.12+ (Debian 13 kernel
 #     is 6.12 LTS). Setting it is a no-op on modern kernels; kept here at 0
 #     because some older tooling greps for it.
@@ -76,7 +82,7 @@ common_limits:
 #     hitting the default 8192/128 limits.
 #
 common_sysctl:
-  vm.swappiness: 1
+  vm.swappiness: "{{ 100 if enable_zram else 1 }}"
   kernel.panic: 60
   net.ipv4.conf.all.log_martians: 1
   net.ipv4.conf.all.arp_announce: 2

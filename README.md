@@ -22,16 +22,32 @@ See `defaults/main.yml` for the full list. The most useful knobs:
 | `enable_*` | `true` (swap: `false`) | Toggle each partial independently |
 | `timezone` | `Asia/Shanghai` | Set via `timedatectl set-timezone` |
 | `common_users` | `[]` | List of user dicts (see example in defaults) |
+| `enable_zram` | `false` | Install zram-tools and enable compressed in-memory swap (also defaults `vm.swappiness` to 100) |
+| `zram_algorithm` | `lz4` | Compression algorithm used by zram-tools |
+| `zram_size_percent` | `50` | Maximum zram device size as a percent of RAM |
+| `zram_priority` | `100` | Swap priority; higher than file swap so zram fills first |
+| `swapfile_priority` | `10` | Disk swapfile priority when enabled alongside zram |
 | `swap_size` | `2048` (MiB) | Swap file size in MiB |
 | `swap_path` | `/swapfile` | Swap file location |
 | `enable_ipv6` | `true` | Toggle `/etc/hosts` IPv6 entries |
 | `ssh_hardening` | see file | Drop-in at `/etc/ssh/sshd_config.d/00-common.conf` — see [docs/SSH_HARDENING.md](docs/SSH_HARDENING.md) |
 
+To use compressed RAM first and disk swap as overflow, enable both layers:
+
+```yaml
+enable_zram: true
+enable_swapfile: true
+```
+
+The role sets zram priority to `100` and file-swap priority to `10`, so the
+kernel prefers zram. Verify the active devices and priorities with
+`swapon --show --output=NAME,TYPE,SIZE,USED,PRIO`.
+
 ## Sysctl tunables of note
 
 `common_sysctl` applies the following — drop the role's defaults in your inventory or `group_vars` to override.
 
-- `vm.swappiness: 1` — keep working sets in RAM; raise on swap-heavy workloads.
+- `vm.swappiness: 1` — keep working sets in RAM; when `enable_zram: true`, the default becomes `100` to favor zram swapping. Override `common_sysctl.vm.swappiness` for workload-specific tuning.
 - `net.ipv4.tcp_tw_reuse: 1` — allow reuse of TIME-WAIT sockets (safe for outbound clients).
 - `fs.inotify.max_user_watches: 524288` and `fs.inotify.max_user_instances: 8192` — raises the inotify limits so dev workloads (Node.js, IDEs, file-sync tools, Docker) stop hitting "too many open files" errors.
 - `net.ipv4.tcp_tw_recycle: 0` — kept at 0 for compatibility with monitoring tooling; the kernel removed this knob in 4.12+ so it's a no-op on Debian 13 / Ubuntu 26.04.
@@ -131,7 +147,7 @@ This is deliberate — on-disk filenames should be short and stable; the namespa
 
 - `tasks/swap.yml` — uses `fallocate -l` (instant allocation) instead of `dd` (slow synchronous write). For a 4 GiB swap this drops from ~30s to <1s. Auto-falls-back to `dd` if the filesystem doesn't support `fallocate` (e.g. ZFS root).
 - No SELinux support; AppArmor is out of scope (Debian-family default, but not configured here).
-- No swap over zram; uses a file-based swap only.
+- zram is optional and independent of file swap. Enable `enable_zram` and `enable_swapfile` together to use compressed RAM first (priority 100), with the disk swapfile as overflow (priority 10). The default zram configuration uses fast `lz4` compression and a device size capped at 50% of physical RAM; the allocated RAM grows only as pages are actually swapped into it.
 - No firewall management (ufw, nftables). If you need it, layer it on top with a separate role.
 - No Docker / container runtime.
 - No users beyond the configured `common_users` list — system accounts are not managed.
