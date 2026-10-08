@@ -145,7 +145,7 @@ common_sysctl:
 #
 ssh_hardening:
   # Authentication
-  permit_root_login: prohibit-password       # was: prohibit-password (Debian default, set explicitly)
+  permit_root_login: 'no'                    # use a regular SSH account and sudo
   password_authentication: null              # null = leave distro default (yes on Debian); set false to require keys
   kbd_interactive_authentication: null      # null = leave distro default
   pubkey_authentication: true                # always on

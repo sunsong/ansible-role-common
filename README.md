@@ -32,6 +32,14 @@ See `defaults/main.yml` for the full list. The most useful knobs:
 | `enable_ipv6` | `true` | Toggle `/etc/hosts` IPv6 entries |
 | `ssh_hardening` | see file | Drop-in at `/etc/ssh/sshd_config.d/00-common.conf` — see [docs/SSH_HARDENING.md](docs/SSH_HARDENING.md) |
 
+## Testing
+
+Run the privileged integration playbook against Debian/Ubuntu test hosts with
+`ansible-playbook -i inventory.ini tests/integration.yml -e "role_under_test=$PWD"`.
+It applies the role and asserts effective runtime state; see
+[docs/ROLE_TESTING.md](docs/ROLE_TESTING.md) for prerequisites, coverage, and
+read-only spot checks.
+
 To use compressed RAM first and disk swap as overflow, enable both layers:
 
 ```yaml
@@ -110,7 +118,7 @@ Or declare at playbook level:
 
 The role deploys a managed drop-in at `/etc/ssh/sshd_config.d/00-common.conf`. Effective settings after running on Debian 13 (OpenSSH 10.0p2):
 
-- `PermitRootLogin prohibit-password` (explicit; matches Debian default)
+- `PermitRootLogin no` (root SSH login disabled; administer through a regular account and `sudo`)
 - `MaxAuthTries 3` (was 6)
 - `LoginGraceTime 60` (was 120)
 - `ClientAliveInterval 300` × `ClientAliveCountMax 2` = 10 min idle timeout (was: never)

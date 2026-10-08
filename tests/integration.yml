@@ -1,0 +1,303 @@
+---
+- name: Apply and verify sunsong.common on Debian or Ubuntu
+  hosts: all
+  become: true
+  gather_facts: true
+
+  vars:
+    role_under_test: sunsong.common
+    ssh_effective_expectations:
+      - { key: permit_root_login, directive: permitrootlogin, expected: 'no' }
+      - { key: password_authentication, directive: passwordauthentication, boolean: true }
+      - { key: kbd_interactive_authentication, directive: kbdinteractiveauthentication, boolean: true }
+      - { key: pubkey_authentication, directive: pubkeyauthentication, boolean: true }
+      - { key: permit_empty_passwords, directive: permitemptypasswords, boolean: true }
+      - { key: max_auth_tries, directive: maxauthtries }
+      - { key: login_grace_time, directive: logingracetime }
+      - { key: x11_forwarding, directive: x11forwarding, boolean: true }
+      - { key: allow_tcp_forwarding, directive: allowtcpforwarding, boolean: true }
+      - { key: allow_agent_forwarding, directive: allowagentforwarding, boolean: true }
+      - { key: allow_stream_local_forwarding, directive: allowstreamlocalforwarding, boolean: true }
+      - { key: client_alive_interval, directive: clientaliveinterval }
+      - { key: client_alive_count_max, directive: clientalivecountmax }
+      - { key: max_sessions, directive: maxsessions }
+      - { key: max_startups, directive: maxstartups }
+      - { key: use_dns, directive: usedns, boolean: true }
+      - { key: gssapi_authentication, directive: gssapiauthentication, boolean: true }
+      - { key: gssapi_cleanup_credentials, directive: gssapicleanupcredentials, boolean: true }
+      - { key: ciphers, directive: ciphers }
+      - { key: macs, directive: macs }
+      - { key: kex_algorithms, directive: kexalgorithms }
+      - { key: allow_users, directive: allowusers }
+      - { key: allow_groups, directive: allowgroups }
+      - { key: deny_users, directive: denyusers }
+      - { key: deny_groups, directive: denygroups }
+      - { key: banner, directive: banner }
+
+  pre_tasks:
+    - name: Require a supported OS
+      ansible.builtin.assert:
+        that:
+          - >-
+            (ansible_facts.distribution == 'Debian' and
+            ansible_facts.distribution_version is version('12', '>=')) or
+            (ansible_facts.distribution == 'Ubuntu' and
+            ansible_facts.distribution_version is version('24.04', '>='))
+        fail_msg: >-
+          This role test supports Debian 12+ and Ubuntu 24.04+ only; detected
+          {{ ansible_facts.distribution }}
+          {{ ansible_facts.distribution_version }}.
+
+  tasks:
+    - name: Apply the role under test
+      ansible.builtin.include_role:
+        name: "{{ role_under_test }}"
+        public: true
+
+    - name: Read the active hostname
+      ansible.builtin.command: hostname
+      register: role_test_hostname
+      changed_when: false
+      when: enable_hostname | bool
+
+    - name: Verify active hostname
+      ansible.builtin.assert:
+        that:
+          - role_test_hostname.stdout == (hostname | default(inventory_hostname))
+      when: enable_hostname | bool
+
+    - name: Read installed package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      when: enable_packages | bool
+
+    - name: Verify configured packages are installed
+      ansible.builtin.assert:
+        that:
+          - item in ansible_facts.packages
+        fail_msg: "Expected package {{ item }} is not installed."
+      loop: "{{ common_packages_debian }}"
+      when: enable_packages | bool
+
+    - name: Verify configured user accounts exist
+      ansible.builtin.command:
+        argv:
+          - getent
+          - passwd
+          - "{{ item.name }}"
+      register: role_test_users
+      changed_when: false
+      failed_when: false
+      loop: "{{ common_users | default([]) }}"
+      when: enable_users | bool
+
+    - name: Assert configured user accounts exist
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Configured account {{ item.item.name }} is missing."
+      loop: "{{ role_test_users.results | default([]) }}"
+      when: enable_users | bool
+
+    - name: Read effective configured sysctls
+      ansible.builtin.command:
+        argv:
+          - sysctl
+          - -n
+          - "{{ item.key }}"
+      register: role_test_sysctls
+      changed_when: false
+      failed_when: false
+      loop: "{{ common_sysctl | dict2items }}"
+      when: enable_kernel | bool
+
+    - name: Assert available configured sysctls are active
+      ansible.builtin.assert:
+        that:
+          - item.rc != 0 or item.stdout == (item.item.value | string)
+        fail_msg: >-
+          {{ item.item.key }} is {{ item.stdout | default('unavailable') }};
+          expected {{ item.item.value }}.
+      loop: "{{ role_test_sysctls.results | default([]) }}"
+      when:
+        - enable_kernel | bool
+        - item.rc == 0
+
+    - name: Read effective sshd configuration
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: role_test_sshd
+      changed_when: false
+      when: enable_ssh | bool
+
+    - name: Validate sshd configuration syntax
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+      when: enable_ssh | bool
+
+    - name: Assert configured sshd directives are effective
+      ansible.builtin.assert:
+        that:
+          - >-
+            (role_test_sshd.stdout_lines |
+            select('match', '^' ~ item.directive ~ '\\s') | first) in
+            ([item.directive ~ ' ' ~ item.expected]
+            if item.expected is defined else
+            (item.accepted_values |
+            map('regex_replace', '^', item.directive ~ ' ') | list
+            if item.accepted_values is defined else
+            [item.directive ~ ' ' ~
+            (('yes' if ssh_hardening[item.key] else 'no')
+            if item.boolean | default(false) else
+            ssh_hardening[item.key] | string)]))
+        fail_msg: >-
+          sshd effective output is missing {{ item.directive }} for configured
+          ssh_hardening.{{ item.key }}={{ ssh_hardening[item.key] }}.
+      loop: "{{ ssh_effective_expectations }}"
+      when:
+        - enable_ssh | bool
+        - ssh_hardening[item.key] is not none
+
+    - name: Read active swap devices
+      ansible.builtin.command: cat /proc/swaps
+      register: role_test_swaps
+      changed_when: false
+      when: enable_zram | bool or enable_swapfile | bool
+
+    - name: Read service states
+      ansible.builtin.service_facts:
+      when: enable_zram | bool or enable_misc | bool
+
+    - name: Read zram runtime attributes
+      ansible.builtin.shell: |
+        printf 'algorithm='
+        cat /sys/block/zram0/comp_algorithm
+        printf 'disksize='
+        cat /sys/block/zram0/disksize
+      args:
+        executable: /bin/sh
+      register: role_test_zram_attributes
+      changed_when: false
+      when: enable_zram | bool
+
+    - name: Assert zram is active with configured algorithm and priority
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['zramswap.service'].status == 'enabled'
+          - role_test_zram_attributes.stdout is search('\\[' ~ zram_algorithm ~ '\\]')
+          - role_test_zram_attributes.stdout is search('disksize=\\s*[1-9][0-9]*')
+          - >-
+            (role_test_swaps.stdout_lines |
+            select('match', '^/dev/zram[0-9]+\\s') | list | length) > 0
+          - >-
+            ((role_test_swaps.stdout_lines |
+            select('match', '^/dev/zram[0-9]+\\s') | first).split()[-1] | int)
+            == zram_priority | int
+        fail_msg: >-
+          zram must be active with algorithm {{ zram_algorithm }} and priority
+          {{ zram_priority }}. Inspect /proc/swaps and /sys/block/zram0.
+      when: enable_zram | bool
+
+    - name: Verify the configured swapfile is active and persistent
+      ansible.builtin.command:
+        argv:
+          - grep
+          - -F
+          - --
+          - "{{ swap_path }}"
+          - /etc/fstab
+      register: role_test_swapfile_fstab
+      changed_when: false
+      when: enable_swapfile | bool
+
+    - name: Read swapfile metadata
+      ansible.builtin.stat:
+        path: "{{ swap_path }}"
+      register: role_test_swapfile
+      when: enable_swapfile | bool
+
+    - name: Assert swapfile is present and active
+      ansible.builtin.assert:
+        that:
+          - role_test_swapfile.stat.exists
+          - role_test_swapfile.stat.mode == '0600'
+          - role_test_swapfile_fstab.rc == 0
+          - role_test_swaps.stdout_lines | select('match', '^' ~ swap_path) | list | length > 0
+        fail_msg: >-
+          {{ swap_path }} must exist with mode 0600, be listed in /etc/fstab,
+          and appear in /proc/swaps.
+      when: enable_swapfile | bool
+
+    - name: Assert zram has higher priority than disk swap
+      ansible.builtin.assert:
+        that:
+          - >-
+            ((role_test_swaps.stdout_lines |
+            select('match', '^' ~ swap_path ~ '\\s') | first).split()[-1] | int)
+            == swapfile_priority | int
+          - zram_priority | int > swapfile_priority | int
+        fail_msg: >-
+          Expected active swap priorities zram={{ zram_priority }} above
+          {{ swap_path }}={{ swapfile_priority }}.
+      when:
+        - enable_zram | bool
+        - enable_swapfile | bool
+
+    - name: Verify configured global git identity
+      ansible.builtin.command:
+        argv:
+          - git
+          - config
+          - --global
+          - --get
+          - "{{ item.key }}"
+      register: role_test_git_identity
+      changed_when: false
+      loop:
+        - { key: user.name, value: "{{ common_git_user_name }}" }
+        - { key: user.email, value: "{{ common_git_user_email }}" }
+      when: enable_git | bool
+
+    - name: Assert global git identity matches role variables
+      ansible.builtin.assert:
+        that:
+          - item.stdout == item.item.value
+      loop: "{{ role_test_git_identity.results | default([]) }}"
+      when: enable_git | bool
+
+    - name: Verify configured timezone is effective
+      ansible.builtin.command:
+        argv:
+          - timedatectl
+          - show
+          - --property=Timezone
+          - --value
+      register: role_test_timezone
+      changed_when: false
+      when: enable_misc | bool
+
+    - name: Assert timezone and profile configuration
+      ansible.builtin.shell: |
+        grep -Fq 'HISTTIMEFORMAT="{{ bash_history_format }}"' /etc/profile.d/99-bash_history.sh &&
+        grep -Fq 'HISTFILESIZE={{ bash_history_size }}' /etc/profile.d/99-bash_history.sh &&
+        grep -Fq 'export LESSCHARSET=utf-8' /etc/profile.d/99-less.sh
+      args:
+        executable: /bin/sh
+      register: role_test_profile
+      changed_when: false
+      when: enable_misc | bool
+
+    - name: Assert timezone and profile checks passed
+      ansible.builtin.assert:
+        that:
+          - role_test_timezone.stdout == timezone
+          - role_test_profile.rc == 0
+          - ansible_facts.services['chrony.service'].state == 'running'
+          - ansible_facts.services['chrony.service'].status == 'enabled'
+      when: enable_misc | bool
+
+    - name: Report integration checks passed
+      ansible.builtin.debug:
+        msg: >-
+          PASS: sunsong.common integration checks passed on
+          {{ ansible_facts.distribution }}
+          {{ ansible_facts.distribution_version }}.

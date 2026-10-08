@@ -17,7 +17,7 @@ From `sudo sshd -T` on a fresh install:
 
 | Directive | Default | Verdict |
 |---|---|---|
-| `permitrootlogin` | `without-password` | OK (same as `prohibit-password`) |
+| `permitrootlogin` | `without-password` | Distro default permits root key login; this role sets `PermitRootLogin no` |
 | `passwordauthentication` | `yes` | **Risk** — vulnerable to brute force |
 | `pubkeyauthentication` | `yes` | OK |
 | `permitemptypasswords` | `no` | OK |
@@ -43,7 +43,7 @@ The role deploys a managed drop-in at `/etc/ssh/sshd_config.d/00-common.conf` vi
 Effective settings after running the role (from `sudo sshd -T` on the test VM):
 
 ```
-permitrootlogin           prohibit-password
+permitrootlogin           no
 passwordauthentication    yes               # kept on; opt-in to disable
 kbdinteractiveauth        <unset>           # distro default
 pubkeyauthentication      yes
@@ -113,7 +113,7 @@ The stock `/etc/ssh/sshd_config` on Debian 13 / Ubuntu 26.04 has:
 Include /etc/ssh/sshd_config.d/*.conf
 ```
 
-This means our drop-in is read as part of the main config. The first directive in our drop-in (`PermitRootLogin prohibit-password`) takes effect because sshd applies the first matching keyword and ignores subsequent ones. Our drop-in must therefore be named with a low leading digit (we use `00-common.conf`) so it sorts before any distro-shipped drop-ins.
+This means our drop-in is read as part of the main config. The first directive in our drop-in (`PermitRootLogin no`) takes effect because sshd applies the first matching keyword and ignores subsequent ones. Our drop-in must therefore be named with a low leading digit (we use `00-common.conf`) so it sorts before any distro-shipped drop-ins.
 
 ### per-handler live-test issue (already fixed pre-hardening)
 
