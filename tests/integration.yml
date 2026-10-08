@@ -54,6 +54,13 @@
         name: "{{ role_under_test }}"
         public: true
 
+    - name: Apply pending service restarts before effectiveness checks
+      ansible.builtin.meta: flush_handlers
+
+    - name: Read service states
+      ansible.builtin.service_facts:
+      when: enable_ssh | bool or enable_zram | bool or enable_misc | bool
+
     - name: Read the active hostname
       ansible.builtin.command: hostname
       register: role_test_hostname
@@ -134,6 +141,13 @@
       changed_when: false
       when: enable_ssh | bool
 
+    - name: Assert the SSH daemon is running after role handlers
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.services['ssh.service'].state == 'running'
+        fail_msg: ssh.service is not running after the role's restart handler.
+      when: enable_ssh | bool
+
     - name: Assert configured sshd directives are effective
       ansible.builtin.assert:
         that:
@@ -151,21 +165,25 @@
             ssh_hardening[item.key] | string)]))
         fail_msg: >-
           sshd effective output is missing {{ item.directive }} for configured
-          ssh_hardening.{{ item.key }}={{ ssh_hardening[item.key] }}.
+          ssh_hardening.{{ item.key }}={{ item.expected | default(ssh_hardening[item.key]) }}.
       loop: "{{ ssh_effective_expectations }}"
       when:
         - enable_ssh | bool
-        - ssh_hardening[item.key] is not none
+        - item.expected is defined or ssh_hardening[item.key] is not none
+
+    - name: Report effective SSH settings read from sshd
+      ansible.builtin.debug:
+        msg: >-
+          {{ role_test_sshd.stdout_lines |
+          select('match', '^(permitrootlogin|passwordauthentication|maxauthtries|banner) ') |
+          list }}
+      when: enable_ssh | bool
 
     - name: Read active swap devices
       ansible.builtin.command: cat /proc/swaps
       register: role_test_swaps
       changed_when: false
       when: enable_zram | bool or enable_swapfile | bool
-
-    - name: Read service states
-      ansible.builtin.service_facts:
-      when: enable_zram | bool or enable_misc | bool
 
     - name: Read zram runtime attributes
       ansible.builtin.shell: |

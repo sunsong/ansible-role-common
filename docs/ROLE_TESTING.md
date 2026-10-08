@@ -5,29 +5,60 @@ effective host state. It is an integration test, not a dry-run: it requires
 SSH access and privilege escalation, and it makes the same changes as a normal
 role run. Use disposable VMs or hosts you are authorized to configure.
 
-## Run Against a Host
+## Run Against the Debian and Ubuntu VMs
 
-Install the role's controller-side collections:
+From the role checkout, install the controller-side collections if needed:
 
 ```sh
 ansible-galaxy collection install ansible.posix community.general
 ```
 
-Run the checkout under test by passing its absolute path as
-`role_under_test`:
+The VM bootstrap repo provides the inventory, SSH credentials, and per-VM
+variables. This command tests the current checkout on both VMs, keeps the
+bootstrap variables (including zram and swap enabled), and disables unrelated
+role sections for a focused SSH/zram/swap run:
 
 ```sh
 ansible-playbook \
-  -i /path/to/inventory.ini \
+  -i /home/sloppysun/workspace/kvm-vm-bootstrap/artifacts/inventory.ini \
   tests/integration.yml \
+  --limit debian-test,ubuntu-test \
+  -e @/home/sloppysun/workspace/kvm-vm-bootstrap/ansible/common.yml \
   -e "role_under_test=$PWD" \
-  --limit debian,ubuntu
+  -e '{"enable_hostname":false,"enable_packages":false,"enable_users":false,"enable_kernel":false,"enable_git":false,"enable_misc":false}'
 ```
 
-The inventory must configure connection details and any desired role-variable
-overrides. For example, `enable_zram: true` and `enable_swapfile: true` test
-both swap tiers; the defaults leave both disabled. The play applies the role
-using those inventory variables, then validates the effective result.
+This is an **apply-and-verify integration test**, not a read-only test. It
+applies the selected role tasks, flushes handlers (including the SSH restart),
+then checks effective host state. The focused command above changes/checks SSH,
+zram, and swap. It avoids the `packages.yml` task, which performs a safe APT
+upgrade before installing packages. Remove only the final JSON `-e` argument
+if you intend to test every section enabled in `common.yml` and accept those
+changes; keep the vars-file and local `role_under_test` arguments.
+
+To use a different inventory, replace the inventory path and host limit. To
+test another role source, change `role_under_test`; `$PWD` means this checkout.
+Ansible exits nonzero if a connection or assertion fails. A passing run prints
+one `PASS` message per host and ends with `failed=0` in the recap.
+
+## Read-Only Checks on Already-Configured Hosts
+
+For a verification run that must not apply the role, use these commands on
+each host. They query effective runtime state directly:
+
+```sh
+sudo sshd -t
+sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication|maxauthtries|banner) '
+systemctl is-active ssh
+cat /proc/swaps
+cat /sys/block/zram0/comp_algorithm
+cat /sys/block/zram0/disksize
+sysctl vm.swappiness
+```
+
+Expect `permitrootlogin no`; with both swap layers enabled, `/proc/swaps`
+should list `/dev/zram0` at a higher priority than `/swapfile`. zram is
+activated by `zramswap.service`, not an `/etc/fstab` entry.
 
 ## What It Checks
 
@@ -51,8 +82,7 @@ priority swap device.
 
 ## Verify Existing Hosts Without Reapplying
 
-For a read-only spot check after a previous deployment, run these commands on
-each host (they are also the swap checks used by the integration play):
+For additional zram detail after the checks above:
 
 ```sh
 sudo systemctl is-active zramswap
