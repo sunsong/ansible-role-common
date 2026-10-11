@@ -73,3 +73,20 @@
   ansible.builtin.command:
     cmd: swapon -a
   changed_when: false
+
+- name: Read active swap priorities
+  ansible.builtin.command: cat /proc/swaps
+  register: swapfile_active
+  changed_when: false
+  when: enable_zram
+
+# swapon -a does not change the priority of swap that is already active.
+- name: Re-activate swap file with the configured priority
+  ansible.builtin.shell: "swapoff {{ swap_path | quote }} && swapon -p {{ swapfile_priority | int }} {{ swap_path | quote }}"
+  when:
+    - enable_zram
+    - >-
+      (swapfile_active.stdout_lines | select('match', '^' ~ (swap_path | regex_escape) ~ '\\s')
+      | map('split') | map('last') | first | default(swapfile_priority)) | int
+      != swapfile_priority | int
+  changed_when: true

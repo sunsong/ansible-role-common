@@ -61,16 +61,40 @@
       ansible.builtin.service_facts:
       when: enable_ssh | bool or enable_zram | bool or enable_misc | bool
 
-    - name: Read the active hostname
+    - name: Read the active hostname after role application
       ansible.builtin.command: hostname
       register: role_test_hostname
       changed_when: false
       when: enable_hostname | bool
 
-    - name: Verify active hostname
+    - name: Verify role did not rename the host
       ansible.builtin.assert:
         that:
-          - role_test_hostname.stdout == (hostname | default(inventory_hostname))
+          - role_test_hostname.stdout == ansible_facts.hostname
+      when: enable_hostname | bool
+
+    - name: Read effective IPv4 hostname resolution
+      ansible.builtin.command:
+        argv:
+          - getent
+          - ahostsv4
+          - "{{ ansible_facts.hostname }}"
+      register: role_test_hostname_resolution
+      changed_when: false
+      when: enable_hostname | bool
+
+    - name: Verify hostname resolves to IPv4 loopback
+      ansible.builtin.assert:
+        that:
+          - >-
+            '127.0.0.1' in (role_test_hostname_resolution.stdout_lines |
+            map('split') | map('first') | unique | list)
+          - >-
+            '127.0.1.1' not in (role_test_hostname_resolution.stdout_lines |
+            map('split') | map('first') | unique | list)
+        fail_msg: >-
+          {{ ansible_facts.hostname }} should resolve to 127.0.0.1 and not
+          127.0.1.1, got {{ role_test_hostname_resolution.stdout_lines }}.
       when: enable_hostname | bool
 
     - name: Read installed package facts
@@ -121,7 +145,7 @@
     - name: Assert available configured sysctls are active
       ansible.builtin.assert:
         that:
-          - item.rc != 0 or item.stdout == (item.item.value | string)
+          - item.rc != 0 or item.stdout.split() == (item.item.value | string).split()
         fail_msg: >-
           {{ item.item.key }} is {{ item.stdout | default('unavailable') }};
           expected {{ item.item.value }}.
@@ -160,16 +184,16 @@
             map('regex_replace', '^', item.directive ~ ' ') | list
             if item.accepted_values is defined else
             [item.directive ~ ' ' ~
-            (('yes' if ssh_hardening[item.key] else 'no')
+            (('yes' if ssh_hardening_effective[item.key] else 'no')
             if item.boolean | default(false) else
-            ssh_hardening[item.key] | string)]))
+            ssh_hardening_effective[item.key] | string)]))
         fail_msg: >-
           sshd effective output is missing {{ item.directive }} for configured
-          ssh_hardening.{{ item.key }}={{ item.expected | default(ssh_hardening[item.key]) }}.
+          ssh_hardening.{{ item.key }}={{ item.expected | default(ssh_hardening_effective[item.key]) }}.
       loop: "{{ ssh_effective_expectations }}"
       when:
         - enable_ssh | bool
-        - item.expected is defined or ssh_hardening[item.key] is not none
+        - item.expected is defined or ssh_hardening_effective[item.key] is not none
 
     - name: Report effective SSH settings read from sshd
       ansible.builtin.debug:
@@ -213,6 +237,25 @@
         fail_msg: >-
           zram must be active with algorithm {{ zram_algorithm }} and priority
           {{ zram_priority }}. Inspect /proc/swaps and /sys/block/zram0.
+      when: enable_zram | bool
+
+    - name: Read effective swappiness
+      ansible.builtin.command:
+        argv:
+          - sysctl
+          - -n
+          - vm.swappiness
+      register: role_test_swappiness
+      changed_when: false
+      when: enable_zram | bool
+
+    - name: Assert zram swappiness is effective
+      ansible.builtin.assert:
+        that:
+          - role_test_swappiness.stdout == (common_sysctl['vm.swappiness'] | default(100) | string)
+        fail_msg: >-
+          vm.swappiness is {{ role_test_swappiness.stdout }}; expected
+          {{ common_sysctl['vm.swappiness'] | default(100) }}.
       when: enable_zram | bool
 
     - name: Verify the configured swapfile is active and persistent
@@ -273,14 +316,20 @@
       loop:
         - { key: user.name, value: "{{ common_git_user_name }}" }
         - { key: user.email, value: "{{ common_git_user_email }}" }
-      when: enable_git | bool
+      when:
+        - enable_git | bool
+        - common_git_user_name is not none
+        - common_git_user_email is not none
 
     - name: Assert global git identity matches role variables
       ansible.builtin.assert:
         that:
           - item.stdout == item.item.value
       loop: "{{ role_test_git_identity.results | default([]) }}"
-      when: enable_git | bool
+      when:
+        - enable_git | bool
+        - common_git_user_name is not none
+        - common_git_user_email is not none
 
     - name: Verify configured timezone is effective
       ansible.builtin.command:
@@ -307,7 +356,7 @@
     - name: Assert timezone and profile checks passed
       ansible.builtin.assert:
         that:
-          - role_test_timezone.stdout == timezone
+          - timezone is none or role_test_timezone.stdout == timezone
           - role_test_profile.rc == 0
           - ansible_facts.services['chrony.service'].state == 'running'
           - ansible_facts.services['chrony.service'].status == 'enabled'

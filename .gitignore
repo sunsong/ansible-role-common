@@ -28,9 +28,8 @@ htmlcov/
 dist/
 build/
 
-# Ansible runtime artifacts.
-*.retry                 # ansible-playbook leaves these when a task fails
-.ansible/               # (also covered above; explicit for clarity)
+# Ansible runtime artifacts; ansible-playbook leaves *.retry when a task fails.
+*.retry
 
 # Secrets — should NEVER be committed.
 # If you find yourself adding one of these, use ansible-vault or a

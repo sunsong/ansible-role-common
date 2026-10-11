@@ -1,5 +1,7 @@
 # Live-test verification — `sunsong.common`
 
+> **Historical record (2026-09-30).** Several behaviors below have since changed: the role no longer renames hosts or rewrites localhost aliases, `PermitRootLogin` is now `no`, `timezone` defaults to `null`, and `template`'s `validate:` runs on the rendered file (F7's diagnosis was wrong; pre-write validation is restored). For current behavior and the repeatable test, see [README.md](../README.md), [ROLE_TESTING.md](ROLE_TESTING.md), and [CHANGELOG.md](../CHANGELOG.md).
+
 This document is the audit trail for running the role end-to-end against a real Debian 13 VM (`ubuntu-demo@192.168.123.212`, kernel 6.12.107+deb13-amd64, OpenSSH 10.0p2) on 2026-09-30. It captures:
 
 - **What was tested** — every check that ran

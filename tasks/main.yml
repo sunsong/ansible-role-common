@@ -8,8 +8,7 @@
 #     conditional on the play (static). We want per-host, so include_tasks.
 #   - The role runs all enabled partials unconditionally; there is no
 #     ordering dependency between them. packages.yml must run before
-#     miscellaneous-debian.yml so that chrony is installed before the
-#     service task. Both are included here in that order.
+#     miscellaneous.yml so chrony is installed before its service task.
 #   - Collection requirements (`ansible.posix`, `community.general`) are NOT
 #     declared here because `collections:` is not valid at the top of a task
 #     file. Install them on the controller with:

@@ -30,7 +30,8 @@
 - name: Apply ulimit entries in /etc/security/limits.conf
   ansible.builtin.lineinfile:
     dest: /etc/security/limits.conf
-    line: "{{ item.0.user }} {{ item.1 }} {{ item.0.name }} {{ item.0.value }}"
+    line: "{{ item.0.user | default('*') }} {{ item.1 }} {{ item.0.name }} {{ item.0.value }}"
+    regexp: '^{{ item.0.user | default("*") | regex_escape }}\s+{{ item.1 }}\s+{{ item.0.name }}\s'
     state: present
   loop: "{{ common_limits | subelements('type') }}"
 

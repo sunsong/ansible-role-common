@@ -1,6 +1,6 @@
 # `sunsong.common` — Ansible role
 
-Common server bootstrap for Debian and Ubuntu hosts. Sets hostname, swap, packages, users, kernel tunables, sshd hardening, and miscellaneous shell defaults.
+Common server bootstrap for Debian and Ubuntu hosts. Configures host-name resolution, swap, packages, users, kernel tunables, sshd hardening, and miscellaneous shell defaults.
 
 ## Supported operating systems
 
@@ -20,9 +20,11 @@ See `defaults/main.yml` for the full list. The most useful knobs:
 | Variable | Default | Purpose |
 |---|---|---|
 | `enable_*` | `true` (swap: `false`) | Toggle each partial independently |
-| `timezone` | `Asia/Shanghai` | Set via `timedatectl set-timezone` |
-| `common_users` | `[]` | List of user dicts (see example in defaults) |
-| `enable_zram` | `false` | Install zram-tools and enable compressed in-memory swap (also defaults `vm.swappiness` to 100) |
+| `enable_hostname` | `true` | Map the existing system hostname to `127.0.0.1`; does not rename the host |
+| `timezone` | `null` | IANA timezone (e.g. `Asia/Shanghai`) set via `timedatectl set-timezone`; `null` leaves it unchanged |
+| `common_git_user_name` / `common_git_user_email` | `null` | Root's global git identity; `null` skips it |
+| `common_users` | `[]` | List of user dicts (see example in defaults). `sudo: true` grants passwordless root (`NOPASSWD: ALL`); keys under `revoked` are removed |
+| `enable_zram` | `false` | Install zram-tools and enable compressed in-memory swap (also sets `vm.swappiness` to 100, even with `enable_kernel: false`) |
 | `zram_algorithm` | `lz4` | Compression algorithm used by zram-tools |
 | `zram_size_percent` | `50` | Maximum zram device size as a percent of RAM |
 | `zram_priority` | `100` | Swap priority; higher than file swap so zram fills first |
@@ -30,7 +32,7 @@ See `defaults/main.yml` for the full list. The most useful knobs:
 | `swap_size` | `2048` (MiB) | Swap file size in MiB |
 | `swap_path` | `/swapfile` | Swap file location |
 | `enable_ipv6` | `true` | Toggle `/etc/hosts` IPv6 entries |
-| `ssh_hardening` | see file | Drop-in at `/etc/ssh/sshd_config.d/00-common.conf` — see [docs/SSH_HARDENING.md](docs/SSH_HARDENING.md) |
+| `ssh_hardening` | `{}` | Per-key overrides merged over `ssh_hardening_defaults`; rendered to `/etc/ssh/sshd_config.d/00-common.conf` — see [docs/SSH_HARDENING.md](docs/SSH_HARDENING.md) |
 
 ## Testing
 
@@ -38,7 +40,8 @@ Run the privileged integration playbook against Debian/Ubuntu test hosts with
 `ansible-playbook -i inventory.ini tests/integration.yml -e "role_under_test=$PWD"`.
 It applies the role and asserts effective runtime state; see
 [docs/ROLE_TESTING.md](docs/ROLE_TESTING.md) for prerequisites, coverage, and
-read-only spot checks.
+read-only spot checks. Open review follow-ups are tracked in
+[docs/REVIEW_FOLLOWUPS.md](docs/REVIEW_FOLLOWUPS.md).
 
 To use compressed RAM first and disk swap as overflow, enable both layers:
 
@@ -49,7 +52,7 @@ enable_swapfile: true
 
 The role sets zram priority to `100` and file-swap priority to `10`, so the
 kernel prefers zram. Verify the active devices and priorities with
-`swapon --show --output=NAME,TYPE,SIZE,USED,PRIO`.
+`cat /proc/swaps`.
 
 ## Sysctl tunables of note
 
@@ -80,12 +83,13 @@ These are real, observed behaviors on the supported releases. Keep them in mind 
 - **`chrony` is the default NTP daemon** since 24.04. We install it via apt.
 - **`netplan` is the default network config tool** (since 18.04). The role does not touch networking; be aware that netplan-managed interfaces may be reconfigured on next boot by `cloud-init` if you haven't disabled it.
 - **snap is the default for many daemons** (LXD, Firefox, some snaps ship `core22`/`core24`). Snaps run inside AppArmor confinement and use loop devices — they do NOT honor `/etc/security/limits.conf` or the `fs.inotify.*` sysctls for snap-managed processes. If a snap needs higher limits, configure them inside the snap's own config.
-- **cloud-init on cloud images owns `/etc/hosts`.** The role's `lineinfile` writes will be overwritten on next boot by `cloud-init`'s `cc_set_hostname` module unless you disable that module or run `cloud-init clean` after.
+- **cloud-init on cloud images owns `/etc/hosts`.** The role's loopback mapping may be overwritten on next boot by cloud-init; hostname ownership remains with the image/operator.
 - **AppArmor is the default MAC.** Same as Debian.
 - **Ubuntu Pro (free for personal use, paid for enterprise) extends security support to 2034** for noble (24.04). The role does not enroll hosts in Pro.
 
 ### Cross-cutting
 
+- **Timezone and chrony:** `miscellaneous.yml` reads `timedatectl show --property=Timezone` and calls `timedatectl set-timezone` only when it differs from `timezone` (skipped when `timezone` is `null`). This keeps systemd's timezone state and `/etc/localtime` aligned; `/etc/timezone` is not treated as the source of truth. The task requires a running systemd/timedated environment with DBus, so it is not suitable for chroots or minimal containers. The chrony service task assumes `chrony` is installed by `packages.yml`; if `enable_packages: false`, install chrony separately or skip miscellaneous setup on hosts without it.
 - **systemd-resolved handles DNS** on Ubuntu 24.04+ and (usually) Debian 12+. `/etc/resolv.conf` is typically a symlink to `/run/systemd/resolve/stub-resolv.conf` or `/run/systemd/resolve/resolv.conf`. The role does not touch DNS. On Debian 13 netinst installs that use `dhcpcd` instead of systemd-networkd, `/etc/resolv.conf` is rewritten by dhcpcd on every lease renewal and may end up empty if the DHCP server doesn't advertise DNS — set `static domain_name_servers=1.1.1.1 8.8.8.8` in `/etc/dhcpcd.conf` if this happens. Live test on Debian 13 hit this exact issue: `/etc/resolv.conf` was left with a literal `"nameserver# /etc/resolv.conf.tail can replace this line` (single trailing quote, no servers) until fixed.
 - **`/etc/security/limits.conf` is parsed by PAM, not systemd.** Most server services on Debian 13 / Ubuntu 26.04 are pure systemd units (chrony, ssh, nginx, …) and bypass PAM. To raise the open-file limit for a systemd service, drop a unit drop-in like `templates/systemd_openfile.conf` into `/etc/systemd/system/<service>.service.d/`. The template is shipped but not auto-applied — wire it up per-service in your playbook.
 - **cloud-init is preinstalled on cloud images.** It may rewrite `/etc/hosts`, `/etc/hostname`, and run apt upgrades on first boot. Either disable cloud-init after first boot (`touch /etc/cloud/cloud-init.disabled`) or accept that the first `ansible-playbook` may race with cloud-init.
@@ -127,16 +131,16 @@ The role deploys a managed drop-in at `/etc/ssh/sshd_config.d/00-common.conf`. E
 - `Banner /etc/issue.net` (created by the role if missing)
 - `password_authentication`, `allow_tcp_forwarding`, `ciphers`, `macs`, `kex_algorithms`, `allow_users` / `allow_groups` — left as distro defaults (`null` in vars) to avoid breaking workflows; override per environment. See [docs/SSH_HARDENING.md](docs/SSH_HARDENING.md) for the full rationale and per-setting tradeoffs.
 
-Quirks discovered while implementing: `template`'s `validate:` runs against the SOURCE Jinja file, not the rendered output; sshd rejects `true`/`false` and only accepts `yes`/`no`; the `Include /etc/ssh/sshd_config.d/*.conf` line in the stock sshd_config means drop-ins are processed in filename order — name yours `00-*` to win.
+Quirks discovered while implementing: sshd rejects `true`/`false` and only accepts `yes`/`no`; the `Include /etc/ssh/sshd_config.d/*.conf` line in the stock sshd_config means drop-ins are processed in filename order — name yours `00-*` to win.
 
 ## Known module quirks
 
 - **`ansible.builtin.sysctl` does not exist.** sysctl lives in `ansible.posix`. Same for `mount` and `authorized_key`. These were migrated out of core years ago but the old names still trip people up. (Confirmed on this repo's ansible-lint run — `args[module]` flagged `notify` on `lineinfile`, but `ansible.builtin.sysctl` simply doesn't resolve at runtime.)
 - **`ansible.posix.sysctl` defaults to `/etc/sysctl.conf` if `sysctl_file:` is not set.** That's the legacy location and is read once at boot. The role writes to `/etc/sysctl.d/99-common.conf` for modern systemd-sysctl.service pickup. Without the explicit `sysctl_file:`, sysctl.d/ drop-ins would never run.
 - **`ansible.posix.sysctl` fails on unknown keys by default.** `net.ipv4.tcp_tw_recycle` was removed from the Linux kernel in 4.12, so on Debian 13 / Ubuntu 26.04 setting it raises `cannot stat /proc/sys/net/ipv4/tcp_tw_recycle`. The role uses `ignoreerrors: true` and keeps the key in defaults for monitoring-tooling compatibility.
-- **Bare fact references (`ansible_fqdn`, `ansible_hostname`) emit `INJECT_FACTS_AS_VARS` deprecation warnings** on ansible-core 2.19 and are removed in 2.24. The role uses `hostvars[inventory_hostname]['ansible_fqdn']` for forward compatibility, then caches to `host_fqdn` / `host_short` via `set_fact` to keep line lengths sane.
+- **Bare fact references (`ansible_fqdn`, `ansible_hostname`) emit `INJECT_FACTS_AS_VARS` deprecation warnings** on ansible-core 2.19 and are removed in 2.24. The role and integration test read facts through `ansible_facts[...]` (e.g. `ansible_facts.hostname`) instead.
 - **sshd rejects `true`/`false` for boolean directives.** Only `yes`/`no` are valid. The sshd drop-in template uses a Jinja `bool_yn` macro to convert Python booleans to sshd syntax.
-- **`template`'s `validate:` runs against the SOURCE .j2 file, not the rendered output.** The sshd drop-in deploy task does not use `validate:`; safety is delegated to the `Restart ssh` handler in `handlers/main.yml` which runs `sshd -t` against the FULL effective config before restart.
+- **sshd drop-in validation is two-stage.** `template`'s `validate:` runs `sshd -t -f` on the rendered drop-in before it is written, so an invalid file never reaches disk. The `Restart ssh` handler then runs `sshd -t` against the full config (all drop-ins) before restarting.
 ## A note on `.ansible/`
 
 If you've cloned this repo and run `ansible-galaxy role install` from inside it, you may see a `.ansible/` directory appear. **That directory is ansible-galaxy's local role/collection cache, not source code** — it contains symlinks pointing at other roles installed elsewhere on your disk. The repo's `.gitignore` excludes it.

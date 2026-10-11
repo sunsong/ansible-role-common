@@ -82,16 +82,11 @@ Combined idle timeout: `clientaliveinterval 300` × `clientalivecountmax 2` = 10
 
 ## Quirks / weirdness encountered
 
-### `validate:` on `template` runs against the SOURCE template, not the rendered output
+### Two-stage `sshd -t` validation
 
-The Ansible `template` module's `validate:` runs against the SOURCE file (the .j2), not the rendered output. Passing `validate: '/usr/sbin/sshd -t -f %s'` ran `sshd -t` against the Jinja template and failed with `unsupported option "true"` because the template content isn't valid sshd_config.
+`template`'s `validate:` runs against the rendered temporary file, not the `.j2` source. An earlier `unsupported option "true"` failure came from rendered `true`/`false` values (fixed by `bool_yn`, below), not from validating the source.
 
-Two fixes considered:
-
-1. Drop `validate:` from the template task; rely on the `restart ssh` handler in `handlers/main.yml` which already runs `sshd -t` before restart.
-2. Validate the rendered output in a separate task.
-
-Chose (1) — the handler's check covers the deployed file post-render and is the source of truth for safety. The template task uses `notify: Restart ssh` which only fires on changed, and the handler runs `sshd -t -f /etc/ssh/sshd_config` (the FULL config including all drop-ins).
+The deploy task runs `sshd -t -f %s` on the rendered drop-in, so an invalid drop-in is never written. The `Restart ssh` handler then runs `sshd -t` against the full config (main file plus all drop-ins) before restarting, which also catches conflicts with other drop-ins.
 
 ### `true` / `false` vs `yes` / `no`
 
@@ -160,16 +155,16 @@ Or in Ansible:
 
 ## How to extend
 
-To add a new directive, edit `defaults/main.yml` under `ssh_hardening` and `templates/sshd_common.conf.j2`. The template is fully conditional — adding a key with `null` value omits the directive.
+To add a new directive, edit `defaults/main.yml` under `ssh_hardening_defaults` and `templates/sshd_common.conf.j2`. The template is fully conditional — adding a key with `null` value omits the directive.
 
-To enforce something for compliance (e.g. CIS), override per environment:
+To enforce something for compliance (e.g. CIS), override per environment. Only the keys you set change; the rest keep their defaults:
 
 ```yaml
 # group_vars/prod.yml
 ssh_hardening:
   password_authentication: false
   allow_tcp_forwarding: false
-  allow_users: deployer,ops
+  allow_users: 'deployer ops'   # space-separated, not comma-separated
   ciphers: 'chacha20-poly1305@openssh.com,aes256-gcm@openssh.com'
   macs: 'hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com'
   kex_algorithms: 'curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512'

@@ -1,66 +1,30 @@
 ---
 #
-# Hostname + /etc/hosts.
+# Resolve the existing short hostname to IPv4 loopback without renaming the host.
 #
 # Quirks:
 #   - On Ubuntu 24.04+ cloud images, cloud-init owns /etc/hosts and may
-#     overwrite our changes on next boot. Either disable cloud-init's
-#     manage_etc_hosts (`cloud_init_modules: [config, ssh, set-passwords,
-#     runcmd]`) or use `ansible.builtin.copy` with a `validate` step.
-#   - The `hostname` module writes /etc/hostname but does not update
-#     /etc/hosts. systemd-hostnamed handles the live kernel hostname.
-#   - The IPv4 and IPv6 lines are split because ansible_fqdn differs from
-#     ansible_hostname when the host has a DNS suffix; we want both.
-#   - Fact access uses `hostvars[inventory_hostname]['ansible_fqdn']` rather
-#     than the bare `ansible_fqdn`. The bare form works on ansible-core
-#     2.12-2.23 but emits INJECT_FACTS_AS_VARS deprecation warnings and is
-#     removed in 2.24. The hostvars form is unambiguous and works on every
-#     supported controller (2.12+).
-#   - `host_fqdn` and `host_short` are pulled into vars via `set_fact` to
-#     keep line lengths under the 160-char limit and avoid repeating the
-#     long hostvars subscript twice per line.
+#     overwrite these changes on next boot.
+#   - Debian commonly maps its hostname to 127.0.1.1. That entry is removed
+#     so the hostname resolves consistently to 127.0.0.1.
 #
-- name: Set the system hostname
-  ansible.builtin.hostname:
-    name: "{{ hostname | default(inventory_hostname) }}"
-
-- name: Cache host FQDN/short-name in vars
-  ansible.builtin.set_fact:
-    host_fqdn: "{{ hostvars[inventory_hostname]['ansible_fqdn'] }}"
-    host_short: "{{ hostvars[inventory_hostname]['ansible_hostname'] }}"
-
-- name: Configure /etc/hosts (IPv4, FQDN set)
+- name: Remove Debian non-loopback hostname mapping
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    line: "127.0.0.1  {{ host_fqdn }} {{ host_short }} localhost.localdomain localhost localhost4.localdomain4 localhost4"
+    regexp: '^127\.0\.1\.1\s+(?:\S+\s+)*{{ ansible_facts.hostname | regex_escape }}(\s|$)'
+    state: absent
+
+- name: Ensure the current hostname resolves to IPv4 loopback
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "127.0.0.1 localhost {{ ansible_facts.hostname }}"
     regexp: '^127\.0\.0\.1\s+.*localhost'
     state: present
-  when: host_fqdn != 'localhost.localdomain'
 
-- name: Configure /etc/hosts (IPv4, hostname only)
+- name: Keep IPv6 loopback aliases limited to localhost
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    line: "127.0.0.1  {{ host_short }} localhost.localdomain localhost localhost4.localdomain4 localhost4"
-    regexp: '^127\.0\.0\.1\s+.*localhost'
+    line: "::1 localhost ip6-localhost ip6-loopback"
+    regexp: '^::1\s+'
     state: present
-  when: host_fqdn == 'localhost.localdomain'
-
-- name: Configure /etc/hosts (IPv6, FQDN set)
-  ansible.builtin.lineinfile:
-    path: /etc/hosts
-    line: "::1  {{ host_fqdn }} {{ host_short }} localhost.localdomain localhost localhost6.localdomain6 localhost6"
-    regexp: '^::1\s+.*localhost'
-    state: present
-  when:
-    - host_fqdn != 'localhost.localdomain'
-    - enable_ipv6
-
-- name: Configure /etc/hosts (IPv6, hostname only)
-  ansible.builtin.lineinfile:
-    path: /etc/hosts
-    line: "::1  {{ host_short }} localhost.localdomain localhost localhost6.localdomain6 localhost6"
-    regexp: '^::1\s+.*localhost'
-    state: present
-  when:
-    - host_fqdn == 'localhost.localdomain'
-    - enable_ipv6
+  when: enable_ipv6

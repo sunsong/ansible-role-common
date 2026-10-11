@@ -9,10 +9,10 @@
 #     Debian 13+ / Ubuntu 24.04+ includes everything in that directory, so
 #     our directives take effect without editing the main config.
 #   - Generate a banner at /etc/issue.net (Pre-login banner) when
-#     ssh_hardening.banner is set. The role creates the file if missing;
-#     operators may override with their own.
-#   - The "restart ssh" handler in handlers/main.yml runs `sshd -t` before
-#     the restart, so a syntax error here cannot lock you out.
+#     ssh_hardening.banner is set. The role creates the file only if missing;
+#     an existing banner is left untouched.
+#   - The drop-in is validated with `sshd -t -f` before it is written; the
+#     "Restart ssh" handler validates the full config again before restarting.
 #
 # Quirks:
 #   - The pre-hardening lineinfile tasks for UseDNS / GSSAPIAuthentication
@@ -31,17 +31,19 @@
     owner: root
     group: root
     mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
   notify: Restart ssh
 
 - name: Ensure pre-login banner file exists
   ansible.builtin.copy:
-    dest: "{{ ssh_hardening.banner | default('/etc/issue.net') }}"
+    dest: "{{ ssh_hardening_effective.banner }}"
     owner: root
     group: root
     mode: "0644"
+    force: false
     content: |
       ********************************************************************
       * Authorized access only. All activity is monitored and recorded.   *
       * Disconnect immediately if you are not an authorized user.        *
       ********************************************************************
-  when: ssh_hardening.banner is defined and ssh_hardening.banner != none
+  when: ssh_hardening_effective.banner is not none

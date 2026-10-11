@@ -3,14 +3,15 @@
 # User creation + SSH key management + sudoers drop-ins.
 #
 # Quirks:
-#   - The first task adds `SSH_AUTH_SOCK` to sudoers' env_keep. Required for
-#     `sudo -A` to forward ssh-agent; harmless if you don't use agent
-#     forwarding.
+#   - The first task adds `SSH_AUTH_SOCK` to sudoers' env_keep so commands run
+#     through sudo, including as root, can use the caller's forwarded ssh-agent.
 #   - `authorized_key` (in ansible.posix, not ansible.builtin) skips users
 #     that don't opt in via `item.0.ssh`. The `with_subelements` loop flattens
-#     `authorized` per user.
+#     `authorized` per user. Keys listed under `revoked` are removed.
+#   - `sudo: true` grants `NOPASSWD: ALL`; dropping it removes the fragment.
 #   - sudoers drop-ins go in /etc/sudoers.d/ with mode 0440 (not 0644) —
-#     sudo refuses to parse files with looser permissions.
+#     sudo refuses to parse files with looser permissions, and ignores file
+#     names containing a dot, so dots in user names are replaced.
 #
 - name: Allow SSH_AUTH_SOCK through sudo
   ansible.builtin.lineinfile:
@@ -35,13 +36,27 @@
   when: item.0.ssh | default(false)
   loop: "{{ common_users | subelements('authorized', skip_missing=True) }}"
 
+- name: Remove revoked SSH keys
+  ansible.posix.authorized_key:
+    state: absent
+    user: "{{ item.0.name }}"
+    key: "{{ item.1 }}"
+  loop: "{{ common_users | subelements('revoked', skip_missing=True) }}"
+
 - name: Drop sudoers fragments
   ansible.builtin.template:
     src: sudo_user.j2
-    dest: "/etc/sudoers.d/{{ item.name }}"
+    dest: "/etc/sudoers.d/{{ item.name | replace('.', '_') }}"
     owner: root
     group: root
     mode: "0440"
     validate: 'visudo -cf %s'
   when: item.sudo | default(false)
+  loop: "{{ common_users | default([]) }}"
+
+- name: Remove sudoers fragments for users without sudo
+  ansible.builtin.file:
+    path: "/etc/sudoers.d/{{ item.name | replace('.', '_') }}"
+    state: absent
+  when: not (item.sudo | default(false))
   loop: "{{ common_users | default([]) }}"

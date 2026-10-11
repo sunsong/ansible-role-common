@@ -35,3 +35,13 @@
     name: zramswap
     enabled: true
     state: started
+
+- name: Apply zram swappiness when kernel tunables are disabled
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "{{ common_sysctl['vm.swappiness'] | default(100) }}"
+    state: present
+    sysctl_set: true
+    reload: true
+    sysctl_file: /etc/sysctl.d/99-common.conf
+  when: not enable_kernel

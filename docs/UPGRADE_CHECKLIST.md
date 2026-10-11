@@ -1,5 +1,7 @@
 # `sunsong.common` — Debian 13 / Ubuntu 26.04 Upgrade & Modernization
 
+> **Historical record.** File names and behaviors below reflect the v2 modernization; later changes (merged `miscellaneous-debian.yml`, hostname, SSH validation, defaults) are tracked in [CHANGELOG.md](../CHANGELOG.md).
+
 This document captures the review of `sunsong.common` against Debian 13 (Trixie) and Ubuntu 26.04 LTS, the gap analysis, and the modernization changes that were applied. The OS quirks live in [README.md](../README.md) under "OS quirks and gotchas"; the SSH hardening rationale is in [docs/SSH_HARDENING.md](SSH_HARDENING.md); the full live-test audit trail (24-row verification matrix, pre/post fixes, hardening workflow) is in [docs/LIVE_TEST_VERIFICATION.md](LIVE_TEST_VERIFICATION.md).
 
 ## Status: applied

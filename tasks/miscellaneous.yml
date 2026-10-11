@@ -1,7 +1,7 @@
 ---
 #
-# OS-agnostic misc: bash history + LESS charset. The RedHat-specific tasks
-# (firewalld, NetworkManager, tzdata) were dropped with RedHat-family support.
+# Shared miscellaneous settings for supported Debian and Ubuntu hosts.
+# RedHat-specific tasks (firewalld, NetworkManager, tzdata) were dropped.
 #
 - name: Configure bash history size and format
   ansible.builtin.copy:
@@ -12,7 +12,6 @@
     content: |
       export HISTTIMEFORMAT="{{ bash_history_format }}"
       export HISTFILESIZE={{ bash_history_size }}
-  when: enable_misc
 
 - name: Configure LESS charset
   ansible.builtin.copy:
@@ -22,8 +21,32 @@
     mode: "0644"
     content: |
       export LESSCHARSET=utf-8
-  when: enable_misc
 
-- name: Configure timezone via systemd
-  ansible.builtin.include_tasks: miscellaneous-debian.yml
-  when: enable_misc
+- name: Read current timezone
+  ansible.builtin.command:
+    argv:
+      - timedatectl
+      - show
+      - --property=Timezone
+      - --value
+  register: current_timezone
+  changed_when: false
+  when: timezone is not none
+
+- name: Set timezone via timedatectl
+  ansible.builtin.command:
+    argv:
+      - timedatectl
+      - set-timezone
+      - "{{ timezone }}"
+  when:
+    - timezone is not none
+    - current_timezone.stdout != timezone
+  changed_when: true
+
+- name: Ensure chrony service is started and enabled
+  ansible.builtin.service:
+    name: chrony
+    state: started
+    enabled: true
+    use: service

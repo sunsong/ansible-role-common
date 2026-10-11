@@ -12,8 +12,8 @@
 {% macro bool_yn(v) -%}
 {{- 'yes' if v else 'no' -}}
 {%- endmacro %}
-{% set h = ssh_hardening | default({}) %}
-{% if h.permit_root_login is not none %}PermitRootLogin {{ h.permit_root_login }}
+{% set h = ssh_hardening_effective %}
+{% if h.permit_root_login is not none %}PermitRootLogin {{ bool_yn(h.permit_root_login) if h.permit_root_login is boolean else h.permit_root_login }}
 {% endif %}
 {% if h.password_authentication is not none %}PasswordAuthentication {{ bool_yn(h.password_authentication) }}
 {% endif %}

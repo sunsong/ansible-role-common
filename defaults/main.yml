@@ -18,8 +18,9 @@ swapfile_priority: 10
 #
 # Git related
 #
-common_git_user_name: User Name
-common_git_user_email: user@example.com
+# null skips setting the global git identity.
+common_git_user_name: null
+common_git_user_email: null
 
 #
 # Packages (Debian/Ubuntu only — RedHat-family support was dropped in v2).
@@ -41,11 +42,13 @@ common_packages_debian:
 #
 common_users: []
 #    - name: myuser
-#      sudo: yes
+#      sudo: yes            # grants passwordless root (NOPASSWD: ALL)
 #      ssh: yes
 #      authorized:
 #          - ssh-rsa AAAAAxxxx
 #          - https://github.com/myuser.keys
+#      revoked:             # keys to remove
+#          - ssh-rsa AAAAAold
 
 #
 # Kernel
@@ -125,6 +128,8 @@ common_sysctl:
 #
 # Each key corresponds 1:1 to an sshd_config directive. Set a value to `null`
 # to omit the directive (use distro default); set a string/list to override.
+# Override individual keys in `ssh_hardening`; they are merged over
+# `ssh_hardening_defaults`, so a partial override keeps the other defaults.
 # Settings that harden vs distro defaults (e.g. `permit_root_login`,
 # `max_auth_tries`) ship with safe values; settings that may break workflows
 # (e.g. `password_authentication`, `allow_tcp_forwarding`) ship as `null`
@@ -137,13 +142,13 @@ common_sysctl:
 #     flipping this.
 #   - `allow_tcp_forwarding: false` breaks SSH jumphost / `ssh -L` / `ssh -R`
 #     patterns. Leave `null` if the host is a bastion.
-#   - The `restart ssh` handler in handlers/main.yml runs `/usr/sbin/sshd -t`
-#     before restart, so a typo in this file cannot lock you out.
+#   - The drop-in is validated with `sshd -t -f` before it is written, and the
+#     `Restart ssh` handler validates the full config again before restarting.
 #   - On Debian 13 / Ubuntu 26.04 with OpenSSH 9.6+/10.x, the algorithm
 #     defaults (ciphers/macs/kex) are already modern. Override only for
 #     compliance reasons.
 #
-ssh_hardening:
+ssh_hardening_defaults:
   # Authentication
   permit_root_login: 'no'                    # use a regular SSH account and sudo
   password_authentication: null              # null = leave distro default (yes on Debian); set false to require keys
@@ -181,12 +186,15 @@ ssh_hardening:
   # Banner
   banner: /etc/issue.net                      # path; the file is created by the role if missing
 
+ssh_hardening: {}
+ssh_hardening_effective: "{{ ssh_hardening_defaults | combine(ssh_hardening) }}"
+
 #
 # Misc
 #
 enable_ipv6: true
 
-timezone: Asia/Shanghai
+timezone: null  # IANA name, e.g. Asia/Shanghai; null leaves the host timezone unchanged
 
 bash_history_size: 10000
 bash_history_format: '%Y-%m-%d %T '

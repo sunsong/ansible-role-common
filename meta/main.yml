@@ -9,7 +9,7 @@ galaxy_info:
   namespace: sunsong
   author: sunsong
   description: >-
-    common server bootstrap for Debian 13+ and Ubuntu 24.04+
+    common server bootstrap for Debian 12+ and Ubuntu 24.04+
     (hostname, packages, users, kernel tunables, sshd hardening,
     miscellaneous shell defaults)
   license: MIT
@@ -36,6 +36,4 @@ galaxy_info:
 # selinux, synchronize, firewalld) and community.general (git_config).
 # Install via:
 #   ansible-galaxy collection install ansible.posix community.general
-# The role's tasks/main.yml also declares `collections:` so the FQCNs
-# resolve on a fresh controller.
 dependencies: []
